@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Read-only triage scanner for EPK8/EPAC/PAC-like binary files.
 
-Reports signatures and candidate 32-byte PACH header fields. This is not a decoder.
-All offsets are byte offsets; candidate header fields are shown as raw little-endian
-integers and must not be assumed to have a specific meaning without format research.
+Reports signatures, candidate 32-byte PACH headers, and distances between
+recognized markers. Marker positions are clues only, not validated chunk boundaries.
 """
 from __future__ import annotations
 import argparse
@@ -28,10 +27,21 @@ def all_offsets(data: bytes, sig: bytes) -> list[int]:
 def scan(path: Path) -> dict:
     data = path.read_bytes()
     found = {}
+    events = []
     for sig in SIGNATURES:
         offsets = all_offsets(data, sig)
         if offsets:
-            found[sig.decode("ascii", errors="replace")] = offsets
+            label = sig.decode("ascii", errors="replace")
+            found[label] = offsets
+            events.extend({"offset": off, "signature": label} for off in offsets)
+    events.sort(key=lambda x: (x["offset"], x["signature"]))
+
+    sequence = []
+    for i, event in enumerate(events):
+        item = dict(event)
+        if i:
+            item["distance_from_previous_marker"] = event["offset"] - events[i - 1]["offset"]
+        sequence.append(item)
 
     pachs = []
     for off in found.get("PACH", [])[:1000]:
@@ -42,7 +52,6 @@ def scan(path: Path) -> dict:
             "header_bytes_available": len(raw),
         }
         if len(raw) == 32:
-            # Raw candidate fields only; semantic meaning is not yet established.
             item["u32_le_at_header_offsets_16_20_24_28"] = list(
                 struct.unpack_from("<4I", raw, 16)
             )
@@ -53,9 +62,11 @@ def scan(path: Path) -> dict:
         "size_bytes": len(data),
         "header_hex_64_bytes": data[:64].hex(" "),
         "signatures": found,
+        "marker_sequence": sequence[:5000],
         "pach_header_candidates": pachs,
         "limitations": [
             "Signature matches are clues only and do not prove chunk semantics.",
+            "Marker distances are not asserted to be chunk sizes or boundaries.",
             "PACH integer fields are reported raw; their meanings are unverified.",
             "No mesh, skeleton, texture, or animation decoding is performed.",
             "Input file is read only; only the optional report file is written."
