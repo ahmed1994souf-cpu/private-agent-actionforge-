@@ -1,0 +1,36 @@
+name: Analyze sample format
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/**"
+      - ".github/workflows/analyze.yml"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Create synthetic fixture and run analyzer
+        run: |
+          mkdir -p out
+          printf 'EPK8\000\000PACHxxxxBPE ' > out/synthetic.pac
+          python tools/analyze_pac.py out/synthetic.pac --json out/report.json
+          python - <<'PY'
+          import json
+          d=json.load(open("out/report.json", encoding="utf-8"))
+          assert d["size_bytes"] > 0
+          assert "EPK8" in d["signatures"]
+          assert "PACH" in d["signatures"]
+          assert "BPE " in d["signatures"]
+          print("Synthetic fixture test passed.")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: analyzer-test-report
+          path: out/report.json
+          retention-days: 3
