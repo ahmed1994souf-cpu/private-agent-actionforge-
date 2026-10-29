@@ -20,13 +20,11 @@ jobs:
           mkdir -p out
           python - <<'PY'
           from pathlib import Path
-          # Deliberately synthetic bytes: exercise offsets and raw header parsing only.
           data = bytearray(b"_" * 96)
           data[0:4] = b"EPK8"
           data[16:20] = b"PACH"
           data[32:36] = b"BPE "
           data[48:52] = b"DDS "
-          data[32:36] = b"BPE "
           Path("out/synthetic.pac").write_bytes(data)
           PY
           python tools/analyze_pac.py out/synthetic.pac --json out/report.json
@@ -44,8 +42,25 @@ jobs:
           assert any("not asserted to be chunk sizes" in s for s in d["limitations"])
           print("Synthetic offset/header/sequence tests passed.")
           PY
+      - name: Test read-only SVRMOD ZIP inspection
+        run: |
+          python - <<'PY'
+          import zipfile
+          with zipfile.ZipFile("out/sample.svrmod", "w") as z:
+              z.writestr("manifest.txt", "type=superstar\\nid=test\\n")
+              z.writestr("ch.pac", b"EPK8" + b"_" * 12 + b"PACH" + b"_" * 32)
+          PY
+          python tools/analyze_svrmod.py out/sample.svrmod --json out/archive-report.json
+          python - <<'PY'
+          import json
+          d=json.load(open("out/archive-report.json", encoding="utf-8"))
+          assert any(m["name"] == "manifest.txt" for m in d["members"])
+          assert d["pac_analysis"]["signatures"]["EPK8"] == [0]
+          assert d["pac_analysis"]["signatures"]["PACH"] == [16]
+          print("Synthetic SVRMOD ZIP test passed.")
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: analyzer-test-report
-          path: out/report.json
+          path: out/*.json
           retention-days: 3
