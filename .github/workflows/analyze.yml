@@ -41,7 +41,7 @@ jobs:
           assert d["pach_header_candidates"][0]["offset"] == 16
           assert len(d["marker_sequence"]) == 4
           assert d["marker_sequence"][1]["distance_from_previous_marker"] == 16
-          assert any("not validated chunk boundaries" in s for s in d["limitations"])
+          assert any("not asserted to be chunk sizes" in s for s in d["limitations"])
           print("Synthetic offset/header/sequence tests passed.")
           PY
       - uses: actions/upload-artifact@v4
